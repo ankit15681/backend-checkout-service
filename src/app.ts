@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { addItem, createCart, getCart, removeItem, setItemQuantity } from './carts.ts';
 import type { Config } from './config.ts';
+import { generateCoupon, listCoupons } from './coupons.ts';
 import type { DB } from './db.ts';
 import { AppError, errors } from './errors.ts';
 import { MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS } from './money.ts';
@@ -70,6 +71,12 @@ export function createApp(db: DB, config: Config, log: Logger = () => {}) {
   });
 
   // ---- Administration (unauthenticated by design of the exercise) ------------
+  app.post('/admin/coupons', (_req, res) => {
+    res.status(201).json(generateCoupon(db, config));
+  });
+  app.get('/admin/coupons', (_req, res) => {
+    res.json({ coupons: listCoupons(db) });
+  });
   app.patch('/admin/products/:productId', (req, res) => {
     const body = objectBody(req);
     const patch: { priceCents?: number; inventoryDelta?: number } = {};
