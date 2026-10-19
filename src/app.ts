@@ -6,6 +6,7 @@ import { generateCoupon, listCoupons } from './coupons.ts';
 import type { DB } from './db.ts';
 import { AppError, errors } from './errors.ts';
 import { MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS } from './money.ts';
+import { checkout, getOrder, listOrders } from './orders.ts';
 import { getProduct, listProducts, updateProduct } from './products.ts';
 
 export type Logger = (entry: Record<string, unknown>) => void;
@@ -70,12 +71,26 @@ export function createApp(db: DB, config: Config, log: Logger = () => {}) {
     res.json(removeItem(db, req.params.cartId, req.params.productId));
   });
 
+  // ---- Checkout & orders -----------------------------------------------------
+  app.post('/carts/:cartId/checkout', (req, res) => {
+    const couponCode = optionalString(objectBody(req).couponCode, 'couponCode', 64);
+    const { order, replayed } = checkout(db, req.params.cartId, couponCode);
+    res.set('Idempotent-Replayed', String(replayed));
+    res.status(replayed ? 200 : 201).location(`/orders/${order.id}`).json(order);
+  });
+  app.get('/orders/:orderId', (req, res) => {
+    res.json(getOrder(db, req.params.orderId));
+  });
+
   // ---- Administration (unauthenticated by design of the exercise) ------------
   app.post('/admin/coupons', (_req, res) => {
     res.status(201).json(generateCoupon(db, config));
   });
   app.get('/admin/coupons', (_req, res) => {
     res.json({ coupons: listCoupons(db) });
+  });
+  app.get('/admin/orders', (_req, res) => {
+    res.json({ orders: listOrders(db) });
   });
   app.patch('/admin/products/:productId', (req, res) => {
     const body = objectBody(req);
@@ -131,6 +146,14 @@ function objectBody(req: Request): Record<string, unknown> {
 
 function requiredString(value: unknown, field: string): string {
   if (typeof value !== 'string' || value.trim() === '') throw errors.validation(`${field} must be a non-empty string`, { field });
+  return value;
+}
+
+function optionalString(value: unknown, field: string, maxLength: number): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || value.length > maxLength) {
+    throw errors.validation(`${field} must be a string of at most ${maxLength} characters`, { field });
+  }
   return value;
 }
 
