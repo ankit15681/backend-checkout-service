@@ -12,6 +12,7 @@ export interface CouponRow {
   created_at: string;
   redeemed_order_id: string | null;
   redeemed_at: string | null;
+  idempotency_key: string | null;
 }
 
 function couponView(c: CouponRow) {
@@ -49,19 +50,28 @@ export function milestoneStatus(db: DB, config: Config) {
  * Generates exactly one coupon for the earliest reached-but-unrewarded milestone.
  * Runs under the write lock, and coupons.milestone is UNIQUE, so two concurrent
  * admin requests can never mint two coupons for the same milestone.
+ *
+ * With an idempotency key, a retry of a request that already succeeded returns that
+ * request's coupon instead of minting the next pending milestone. Failures are not
+ * remembered (nothing was written), so a retry after NO_ELIGIBLE_MILESTONE re-evaluates.
  */
-export function generateCoupon(db: DB, config: Config) {
+export function generateCoupon(db: DB, config: Config, idempotencyKey: string | null = null) {
   return inTransaction(db, () => {
+    if (idempotencyKey !== null) {
+      const earlier = one<CouponRow>(db, 'SELECT * FROM coupons WHERE idempotency_key = ?', idempotencyKey);
+      if (earlier) return { coupon: couponView(earlier), replayed: true };
+    }
+
     const status = milestoneStatus(db, config);
     if (status.placedOrders < status.nextMilestoneOrderThreshold) throw errors.noEligibleMilestone(status);
 
     const code = newCouponCode();
     run(
       db,
-      'INSERT INTO coupons (code, milestone, order_threshold, discount_bps, created_at) VALUES (?, ?, ?, ?, ?)',
-      code, status.nextMilestone, status.nextMilestoneOrderThreshold, config.couponDiscountBps, nowIso(),
+      'INSERT INTO coupons (code, milestone, order_threshold, discount_bps, created_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?)',
+      code, status.nextMilestone, status.nextMilestoneOrderThreshold, config.couponDiscountBps, nowIso(), idempotencyKey,
     );
-    return couponView(one<CouponRow>(db, 'SELECT * FROM coupons WHERE code = ?', code)!);
+    return { coupon: couponView(one<CouponRow>(db, 'SELECT * FROM coupons WHERE code = ?', code)!), replayed: false };
   });
 }
 

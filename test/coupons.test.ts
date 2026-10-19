@@ -38,6 +38,51 @@ describe('coupons', () => {
     assert.equal((await api.call('GET', '/admin/coupons')).body.coupons.length, 1);
   });
 
+  it('replays a retried generation that carries the same Idempotency-Key', async () => {
+    api = await startServer({ everyNOrders: 1 });
+    await api.placeOrders(3); // three milestones pending: a blind retry would mint another
+    const generate = (key?: string) =>
+      api.call('POST', '/admin/coupons', undefined, key === undefined ? {} : { 'Idempotency-Key': key });
+
+    const first = await generate('gen-1');
+    const retry = await generate('gen-1');
+    assert.equal(first.status, 201);
+    assert.equal(retry.status, 200);
+    assert.equal(retry.headers.get('idempotent-replayed'), 'true');
+    assert.deepEqual(retry.body, first.body);
+
+    // A new key (or no key) is a new request and claims the next milestone.
+    assert.equal((await generate('gen-2')).body.milestone, 2);
+    assert.equal((await generate()).body.milestone, 3);
+    assert.equal((await api.call('GET', '/admin/coupons')).body.coupons.length, 3);
+
+    const bad = await generate('x'.repeat(129));
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.error.code, 'VALIDATION_ERROR');
+  });
+
+  it('mints one coupon when retries with the same key race each other', async () => {
+    api = await startServer({ everyNOrders: 1 });
+    await api.placeOrders(5);
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => api.call('POST', '/admin/coupons', undefined, { 'Idempotency-Key': 'same' })),
+    );
+
+    assert.deepEqual(countBy(results.map((r) => r.status)), new Map([[201, 1], [200, 9]]));
+    assert.equal(new Set(results.map((r) => r.body.code)).size, 1);
+    assert.equal((await api.call('GET', '/admin/coupons')).body.coupons.length, 1);
+  });
+
+  it('remembers only successful generations, so a key can be retried after a 409', async () => {
+    api = await startServer({ everyNOrders: 2 });
+    await api.placeOrders(1);
+    const generate = () => api.call('POST', '/admin/coupons', undefined, { 'Idempotency-Key': 'early' });
+
+    assert.equal((await generate()).body.error.code, 'NO_ELIGIBLE_MILESTONE');
+    await api.placeOrders(1);
+    assert.equal((await generate()).status, 201);
+  });
+
   it('applies a deterministic, half-up rounded discount and redeems only once', async () => {
     api = await startServer({ everyNOrders: 1, discountPercent: '10' });
     await api.placeOrders(1);

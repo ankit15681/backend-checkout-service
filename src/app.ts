@@ -84,8 +84,10 @@ export function createApp(db: DB, config: Config, log: Logger = () => {}) {
   });
 
   // ---- Administration (unauthenticated by design of the exercise) ------------
-  app.post('/admin/coupons', (_req, res) => {
-    res.status(201).json(generateCoupon(db, config));
+  app.post('/admin/coupons', (req, res) => {
+    const { coupon, replayed } = generateCoupon(db, config, idempotencyKey(req));
+    res.set('Idempotent-Replayed', String(replayed));
+    res.status(replayed ? 200 : 201).json(coupon);
   });
   app.get('/admin/coupons', (_req, res) => {
     res.json({ coupons: listCoupons(db) });
@@ -159,6 +161,16 @@ function optionalString(value: unknown, field: string, maxLength: number): strin
     throw errors.validation(`${field} must be a string of at most ${maxLength} characters`, { field });
   }
   return value;
+}
+
+/** Optional `Idempotency-Key` header: 1–128 visible ASCII characters when present. */
+function idempotencyKey(req: Request): string | null {
+  const key = req.get('idempotency-key');
+  if (key === undefined) return null;
+  if (!/^[\x21-\x7e]{1,128}$/.test(key)) {
+    throw errors.validation('Idempotency-Key must be 1-128 visible ASCII characters', { field: 'Idempotency-Key' });
+  }
+  return key;
 }
 
 /** Strict: 2.5, "2", true and 0 are rejected rather than coerced. */

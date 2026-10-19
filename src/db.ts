@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS coupons (
   discount_bps      INTEGER NOT NULL CHECK (discount_bps BETWEEN 1 AND 10000),
   created_at        TEXT NOT NULL,
   redeemed_order_id TEXT UNIQUE REFERENCES orders(id),
-  redeemed_at       TEXT
+  redeemed_at       TEXT,
+  idempotency_key   TEXT UNIQUE                                     -- replays a retried admin request
 );
 `;
 
@@ -81,8 +82,23 @@ export function openDatabase(path: string): DB {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   db.exec(SCHEMA);
+  migrate(db);
   seed(db);
   return db;
+}
+
+/**
+ * Upgrades databases created before a column existed. Runs under the write lock and
+ * re-checks inside it, so several instances starting at once cannot both apply it.
+ */
+function migrate(db: DB): void {
+  inTransaction(db, () => {
+    const columns = (db.prepare('PRAGMA table_info(coupons)').all() as { name: string }[]).map((c) => c.name);
+    if (!columns.includes('idempotency_key')) {
+      db.exec('ALTER TABLE coupons ADD COLUMN idempotency_key TEXT');
+      db.exec('CREATE UNIQUE INDEX coupons_idempotency_key ON coupons (idempotency_key)');
+    }
+  });
 }
 
 function seed(db: DB): void {

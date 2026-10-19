@@ -20,10 +20,10 @@ export interface HttpResult {
 export type Api = ReturnType<typeof client>;
 
 export function client(baseUrl: string) {
-  async function call(method: string, path: string, body?: unknown): Promise<HttpResult> {
+  async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<HttpResult> {
     const res = await fetch(baseUrl + path, {
       method,
-      headers: body === undefined ? {} : { 'content-type': 'application/json' },
+      headers: body === undefined ? headers : { 'content-type': 'application/json', ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();

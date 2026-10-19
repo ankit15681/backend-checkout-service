@@ -176,8 +176,25 @@ paths:
       description: |
         Milestone *k* is reached once `k × n` orders have been placed. Each call mints at
         most one coupon; if several milestones are pending, call repeatedly.
+
+        Send an `Idempotency-Key` to make retries safe: repeating a request whose key
+        already produced a coupon returns that coupon (`200`, `Idempotent-Replayed: true`)
+        instead of minting the next pending milestone. Only successes are remembered.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[\x21-\x7e]+$' }
       responses:
-        '201': { description: Coupon generated, content: { application/json: { schema: { $ref: '#/components/schemas/Coupon' } } } }
+        '201':
+          description: Coupon generated
+          headers: { Idempotent-Replayed: { schema: { type: string, enum: ['false'] } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/Coupon' } } }
+        '200':
+          description: Replay of an earlier successful request with the same Idempotency-Key
+          headers: { Idempotent-Replayed: { schema: { type: string, enum: ['true'] } } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/Coupon' } } }
+        '400': { $ref: '#/components/responses/Error', description: VALIDATION_ERROR (malformed Idempotency-Key) }
         '409':
           $ref: '#/components/responses/Error'
           description: NO_ELIGIBLE_MILESTONE (details is the MilestoneStatus)
