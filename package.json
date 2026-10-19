@@ -1,0 +1,25 @@
+{
+  "name": "checkout-service",
+  "version": "1.0.0",
+  "description": "Checkout and rewards service: carts, idempotent checkout, milestone coupons, reporting.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/server.ts",
+    "dev": "node --watch src/server.ts",
+    "test": "node --test --test-concurrency=1 \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "db:reset": "rm -f data/checkout.db data/checkout.db-wal data/checkout.db-shm"
+  },
+  "dependencies": {
+    "express": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}
