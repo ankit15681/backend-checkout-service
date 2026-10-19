@@ -8,6 +8,7 @@ import { AppError, errors } from './errors.ts';
 import { MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS } from './money.ts';
 import { checkout, getOrder, listOrders } from './orders.ts';
 import { getProduct, listProducts, updateProduct } from './products.ts';
+import { getReport } from './report.ts';
 
 export type Logger = (entry: Record<string, unknown>) => void;
 
@@ -91,6 +92,9 @@ export function createApp(db: DB, config: Config, log: Logger = () => {}) {
   });
   app.get('/admin/orders', (_req, res) => {
     res.json({ orders: listOrders(db) });
+  });
+  app.get('/admin/report', (_req, res) => {
+    res.json(getReport(db, config));
   });
   app.patch('/admin/products/:productId', (req, res) => {
     const body = objectBody(req);
