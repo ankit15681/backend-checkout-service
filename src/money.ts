@@ -15,15 +15,18 @@ export function sumCents(values: number[]): number {
 }
 
 /**
- * Percentage discount on an amount, rounded half-up to the nearest cent, computed
- * with BigInt so the multiplication can never lose precision. Clamped to the amount
- * so a total can never go negative, even if bps were misconfigured above 100%.
+ * Percentage discount on an amount, rounded half-up to the nearest cent. Plain integer
+ * arithmetic is exact while `amount × bps` stays a safe integer, which the bounds above
+ * guarantee for any realistic order (up to ~$9 billion at 100%); beyond that we throw
+ * rather than silently lose precision. Subtracting the remainder first makes the
+ * division exact. Clamped to the amount so a total can never go negative, even if bps
+ * were misconfigured above 100%.
  */
 export function discountCents(amountCents: number, bps: number): number {
   if (!Number.isSafeInteger(amountCents) || amountCents < 0) throw new Error(`invalid amount ${amountCents}`);
   if (!Number.isInteger(bps) || bps < 0) throw new Error(`invalid bps ${bps}`);
-  const raw = (BigInt(amountCents) * BigInt(bps) + 5_000n) / 10_000n;
-  return Math.min(Number(raw), amountCents);
+  const scaled = assertSafeCents(amountCents * bps + 5_000); // + half of 10_000 = round half-up
+  return Math.min((scaled - (scaled % 10_000)) / 10_000, amountCents);
 }
 
 function assertSafeCents(value: number): number {

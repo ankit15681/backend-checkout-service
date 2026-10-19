@@ -18,11 +18,15 @@ describe('money', () => {
     assert.equal(discountCents(0, 1000), 0);
   });
 
-  it('stays exact for amounts where float math would drift', () => {
-    // 0.1 + 0.2 style errors cannot happen: everything is integer cents / BigInt.
-    // 9_007_199_254_740_991 * 0.3333 = 3_002_099_511_605_172.3003 -> rounds down.
-    assert.equal(discountCents(9_007_199_254_740_991, 3_333), 3_002_099_511_605_172);
+  it('stays exact up to the largest supported amount and refuses beyond it', () => {
+    // No 0.1 + 0.2 style errors: amounts are integer cents and bps are integers.
     assert.equal(lineTotalCents(1_999, 3), 5_997);
+    // $9 billion at 100%: amount × bps is still a safe integer, so the result is exact.
+    assert.equal(discountCents(90_000_000_000, 10_000), 90_000_000_000);
+    // 90_071_992_547 × 0.3333 = 30_020_995_115.9151 -> 30_020_995_116 (cross-checked with BigInt).
+    assert.equal(discountCents(90_071_992_547, 3_333), 30_020_995_116);
+    // Past the safe range we fail loudly instead of returning an imprecise discount.
+    assert.throws(() => discountCents(9_007_199_254_740_991, 3_333), /overflow/);
   });
 
   it('parses configured percentages into basis points without floats', () => {
