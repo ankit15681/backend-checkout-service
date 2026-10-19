@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { addItem, createCart, getCart, removeItem, setItemQuantity } from './carts.ts';
 import type { Config } from './config.ts';
 import type { DB } from './db.ts';
 import { AppError, errors } from './errors.ts';
-import { MAX_UNIT_PRICE_CENTS } from './money.ts';
+import { MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS } from './money.ts';
 import { getProduct, listProducts, updateProduct } from './products.ts';
 
 export type Logger = (entry: Record<string, unknown>) => void;
@@ -44,6 +45,28 @@ export function createApp(db: DB, config: Config, log: Logger = () => {}) {
   });
   app.get('/products/:productId', (req, res) => {
     res.json(getProduct(db, req.params.productId));
+  });
+
+  // ---- Carts -----------------------------------------------------------------
+  app.post('/carts', (_req, res) => {
+    const cart = createCart(db);
+    res.status(201).location(`/carts/${cart.id}`).json(cart);
+  });
+  app.get('/carts/:cartId', (req, res) => {
+    res.json(getCart(db, req.params.cartId));
+  });
+  app.post('/carts/:cartId/items', (req, res) => {
+    const body = objectBody(req);
+    const productId = requiredString(body.productId, 'productId');
+    const quantity = requiredQuantity(body.quantity);
+    res.status(201).json(addItem(db, req.params.cartId, productId, quantity));
+  });
+  app.patch('/carts/:cartId/items/:productId', (req, res) => {
+    const quantity = requiredQuantity(objectBody(req).quantity);
+    res.json(setItemQuantity(db, req.params.cartId, req.params.productId, quantity));
+  });
+  app.delete('/carts/:cartId/items/:productId', (req, res) => {
+    res.json(removeItem(db, req.params.cartId, req.params.productId));
   });
 
   // ---- Administration (unauthenticated by design of the exercise) ------------
@@ -97,6 +120,16 @@ function objectBody(req: Request): Record<string, unknown> {
     throw errors.validation('Request body must be a JSON object');
   }
   return req.body as Record<string, unknown>;
+}
+
+function requiredString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim() === '') throw errors.validation(`${field} must be a non-empty string`, { field });
+  return value;
+}
+
+/** Strict: 2.5, "2", true and 0 are rejected rather than coerced. */
+function requiredQuantity(value: unknown): number {
+  return integerInRange(value, 'quantity', 1, MAX_LINE_QUANTITY);
 }
 
 function integerInRange(value: unknown, field: string, min: number, max: number): number {
