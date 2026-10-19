@@ -120,8 +120,10 @@ export function checkout(db: DB, cartId: string, rawCouponCode: string | null): 
       if (coupon.redeemed_order_id !== null) throw errors.couponAlreadyRedeemed(couponCode);
     }
 
+    // Only increases need the customer's re-confirmation; a price drop is simply
+    // charged at the lower current price below.
     const priceChanges: PriceChange[] = lines
-      .filter((l) => l.quoted_unit_price_cents !== l.price_cents)
+      .filter((l) => l.price_cents > l.quoted_unit_price_cents)
       .map((l) => ({
         productId: l.product_id,
         quotedUnitPriceCents: l.quoted_unit_price_cents,
@@ -177,6 +179,13 @@ export function checkout(db: DB, cartId: string, rawCouponCode: string | null): 
 
     const closed = run(db, "UPDATE carts SET status = 'CHECKED_OUT', updated_at = ? WHERE id = ? AND status = 'OPEN'", now, cartId);
     if (closed !== 1) throw new Error(`cart ${cartId} changed state during checkout`);
+    // Freeze the lines at the prices actually charged (a dropped price differs from the
+    // quote), so the checked-out cart's totals match its order.
+    run(
+      db,
+      'UPDATE cart_items SET quoted_unit_price_cents = (SELECT price_cents FROM products WHERE id = cart_items.product_id) WHERE cart_id = ?',
+      cartId,
+    );
 
     return { order: loadOrder(db, orderId), replayed: false };
   });

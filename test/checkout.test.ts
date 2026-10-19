@@ -45,6 +45,28 @@ describe('checkout', () => {
     assert.equal(placed.body.totalCents, 34_999);
   });
 
+  it('passes a price drop on to the customer without asking them to re-confirm', async () => {
+    const cartId = await api.createCart([['monitor', 1], ['mouse', 2]]);
+    await api.call('PATCH', '/admin/products/monitor', { priceCents: 29_999 });
+
+    const view = await api.getCart(cartId);
+    const monitor = view.items.find((i: { productId: string }) => i.productId === 'monitor');
+    assert.equal(monitor.priceChanged, true);
+    assert.equal(monitor.quotedUnitPriceCents, 32_999);
+    assert.equal(monitor.unitPriceCents, 29_999);
+    assert.equal(view.subtotalCents, 29_999 + 2 * 2_499);
+    assert.equal(view.checkoutReady, true);
+    assert.deepEqual(view.issues, []);
+
+    const placed = await api.checkout(cartId);
+    assert.equal(placed.status, 201);
+    assert.equal(placed.body.subtotalCents, view.subtotalCents);
+
+    // The frozen cart reflects what was charged, so it agrees with its order.
+    const closed = await api.getCart(cartId);
+    assert.equal(closed.subtotalCents, placed.body.subtotalCents);
+  });
+
   it('fails a multi-line checkout atomically when any line is short of stock', async () => {
     const slow = await api.createCart([['mouse', 2], ['limited-sneakers', 3]]);
     const fast = await api.createCart([['limited-sneakers', 1]]);

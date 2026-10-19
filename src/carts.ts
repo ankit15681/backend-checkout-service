@@ -75,18 +75,22 @@ export function cartView(db: DB, cart: CartRow) {
   const issues: { productId: string; code: 'PRICE_CHANGED' | 'INSUFFICIENT_STOCK' }[] = [];
   const items = lines.map((l) => {
     const priceChanged = l.quoted_unit_price_cents !== l.price_cents;
-    if (open && priceChanged) issues.push({ productId: l.product_id, code: 'PRICE_CHANGED' });
+    // Only an increase blocks checkout; a drop is passed on to the customer.
+    if (open && l.price_cents > l.quoted_unit_price_cents) issues.push({ productId: l.product_id, code: 'PRICE_CHANGED' });
     if (open && l.inventory < l.quantity) issues.push({ productId: l.product_id, code: 'INSUFFICIENT_STOCK' });
+    // What checkout charges: the quoted price, or the current one if it has dropped.
+    // A checked-out cart's lines were frozen at the charged price.
+    const unitPriceCents = open ? Math.min(l.quoted_unit_price_cents, l.price_cents) : l.quoted_unit_price_cents;
     return {
       productId: l.product_id,
       name: l.name,
       quantity: l.quantity,
-      // The price the customer agreed to when they last added/changed this line.
-      unitPriceCents: l.quoted_unit_price_cents,
+      unitPriceCents,
+      quotedUnitPriceCents: l.quoted_unit_price_cents,
       currentUnitPriceCents: l.price_cents,
       priceChanged,
       availableInventory: l.inventory,
-      lineTotalCents: lineTotalCents(l.quoted_unit_price_cents, l.quantity),
+      lineTotalCents: lineTotalCents(unitPriceCents, l.quantity),
     };
   });
   return {

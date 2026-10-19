@@ -46,7 +46,7 @@ export const errors = {
   insufficientStock: (shortfalls: StockShortfall[]) =>
     new AppError(409, 'INSUFFICIENT_STOCK', 'Not enough inventory for one or more items', { items: shortfalls }),
   priceChanged: (changes: PriceChange[]) =>
-    new AppError(409, 'PRICE_CHANGED', 'Prices changed since items were added; review the cart and re-confirm the affected items', { items: changes }),
+    new AppError(409, 'PRICE_CHANGED', 'Prices increased since items were added; review the cart and re-confirm the affected items', { items: changes }),
   couponNotFound: (code: string) => new AppError(422, 'COUPON_NOT_FOUND', `Coupon ${code} does not exist`, { couponCode: code }),
   couponAlreadyRedeemed: (code: string) =>
     new AppError(409, 'COUPON_ALREADY_REDEEMED', `Coupon ${code} has already been redeemed`, { couponCode: code }),

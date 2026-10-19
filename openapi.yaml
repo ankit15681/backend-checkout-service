@@ -155,7 +155,7 @@ paths:
           $ref: '#/components/responses/Error'
           description: |
             INSUFFICIENT_STOCK (details.items: productId, requested, available) /
-            PRICE_CHANGED (details.items: productId, quoted and current price) /
+            PRICE_CHANGED (a price went up since the line was quoted; details.items: productId, quoted and current price; PATCH the line to accept. Price drops are charged automatically.) /
             COUPON_ALREADY_REDEEMED / CART_ALREADY_CHECKED_OUT
         '422': { $ref: '#/components/responses/Error', description: CART_EMPTY / COUPON_NOT_FOUND }
         '503': { $ref: '#/components/responses/Error', description: SERVICE_BUSY (lock contention; nothing was written; safe to retry) }
@@ -311,7 +311,8 @@ components:
               productId: { type: string }
               name: { type: string }
               quantity: { type: integer }
-              unitPriceCents: { type: integer, description: Price quoted when the line was last added/changed; what checkout will charge. }
+              unitPriceCents: { type: integer, description: What checkout will charge per unit, the quoted price or the current one if it has dropped. For a checked-out cart, the price that was charged. }
+              quotedUnitPriceCents: { type: integer, description: Price quoted when the line was last added/changed. }
               currentUnitPriceCents: { type: integer }
               priceChanged: { type: boolean }
               availableInventory: { type: integer }
