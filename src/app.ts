@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { Config } from './config.ts';
 import type { DB } from './db.ts';
-import { AppError } from './errors.ts';
+import { AppError, errors } from './errors.ts';
+import { MAX_UNIT_PRICE_CENTS } from './money.ts';
+import { getProduct, listProducts, updateProduct } from './products.ts';
 
 export type Logger = (entry: Record<string, unknown>) => void;
 
@@ -36,6 +38,28 @@ export function createApp(db: DB, config: Config, log: Logger = () => {}) {
     res.json({ status: 'ok' });
   });
 
+  // ---- Catalog ---------------------------------------------------------------
+  app.get('/products', (_req, res) => {
+    res.json({ products: listProducts(db) });
+  });
+  app.get('/products/:productId', (req, res) => {
+    res.json(getProduct(db, req.params.productId));
+  });
+
+  // ---- Administration (unauthenticated by design of the exercise) ------------
+  app.patch('/admin/products/:productId', (req, res) => {
+    const body = objectBody(req);
+    const patch: { priceCents?: number; inventoryDelta?: number } = {};
+    if (body.priceCents !== undefined) patch.priceCents = integerInRange(body.priceCents, 'priceCents', 0, MAX_UNIT_PRICE_CENTS);
+    if (body.inventoryDelta !== undefined) {
+      patch.inventoryDelta = integerInRange(body.inventoryDelta, 'inventoryDelta', -1_000_000, 1_000_000);
+    }
+    if (patch.priceCents === undefined && patch.inventoryDelta === undefined) {
+      throw errors.validation('Provide priceCents and/or inventoryDelta');
+    }
+    res.json(updateProduct(db, req.params.productId, patch));
+  });
+
   app.use((req, _res, next) => {
     next(new AppError(404, 'ROUTE_NOT_FOUND', `No route for ${req.method} ${req.path}`));
   });
@@ -63,4 +87,21 @@ function toAppError(err: unknown): AppError | null {
     return new AppError(503, 'SERVICE_BUSY', 'Database is busy; retry the request');
   }
   return null;
+}
+
+// ---- Input validation -------------------------------------------------------
+
+function objectBody(req: Request): Record<string, unknown> {
+  if (req.body === undefined) return {};
+  if (typeof req.body !== 'object' || req.body === null || Array.isArray(req.body)) {
+    throw errors.validation('Request body must be a JSON object');
+  }
+  return req.body as Record<string, unknown>;
+}
+
+function integerInRange(value: unknown, field: string, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+    throw errors.validation(`${field} must be an integer between ${min} and ${max}`, { field, min, max });
+  }
+  return value;
 }
